@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sherlocate - Localización en Tiempo Real</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate icon" type="image/x-icon" href="/favicon.ico" />
+    
+    <!-- Google Fonts: Outfit & Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    
+    <!-- FontAwesome for Sleek Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        :root {
+            --bg-dark: #090d16;
+            --panel-bg: rgba(13, 20, 38, 0.85);
+            --panel-border: rgba(255, 255, 255, 0.08);
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --accent-blue: #3b82f6;
+            --accent-blue-glow: rgba(59, 130, 246, 0.4);
+            --accent-green: #10b981;
+            --accent-green-glow: rgba(16, 185, 129, 0.3);
+            --accent-orange: #f59e0b;
+            --accent-red: #ef4444;
+            --font-heading: 'Outfit', sans-serif;
+            --font-body: 'Inter', sans-serif;
+            --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font-body);
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Fullscreen Map */
+        #map {
+            width: 100%;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* Glassmorphism Panel Overlay */
+        .overlay-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            width: 360px;
+            max-width: calc(100% - 40px);
+            background: var(--panel-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: var(--card-shadow);
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Header Style */
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 12px;
+        }
+
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-section i {
+            font-size: 24px;
+            color: var(--accent-blue);
+            text-shadow: 0 0 10px var(--accent-blue-glow);
+        }
+
+        .logo-section h1 {
+            font-family: var(--font-heading);
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            padding: 4px 10px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            letter-spacing: 0.5px;
+        }
+
+        .status-badge.online {
+            color: var(--accent-green);
+            background: rgba(16, 185, 129, 0.1);
+            border-color: rgba(16, 185, 129, 0.2);
+        }
+
+        .status-badge.offline {
+            color: var(--text-muted);
+            background: rgba(148, 163, 184, 0.1);
+            border-color: rgba(148, 163, 184, 0.2);
+        }
+
+        .pulse-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .status-badge.online .pulse-dot {
+            background-color: var(--accent-green);
+            box-shadow: 0 0 8px var(--accent-green-glow);
+            animation: pulse-green 1.5s infinite;
+        }
+
+        .status-badge.offline .pulse-dot {
+            background-color: var(--text-muted);
+        }
+
+        @keyframes pulse-green {
+            0% { transform: scale(0.9); opacity: 1; }
+            50% { transform: scale(1.3); opacity: 0.5; }
+            100% { transform: scale(0.9); opacity: 1; }
+        }
+
+
+
+        /* Telemetry Cards */
+        .telemetry-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .telemetry-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 12px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .telemetry-card .label {
+            font-size: 11px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .telemetry-card .value {
+            font-family: var(--font-heading);
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .telemetry-card.full-width {
+            grid-column: span 2;
+        }
+
+        /* Battery Level Progress */
+        .battery-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            margin-top: 2px;
+        }
+
+        .battery-bar-bg {
+            flex-grow: 1;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .battery-bar-fill {
+            height: 100%;
+            width: 0%;
+            background-color: var(--accent-green);
+            border-radius: 3px;
+            transition: width 0.5s ease-out, background-color 0.3s;
+        }
+
+
+
+        .btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            color: var(--text-main);
+            padding: 10px;
+            font-family: var(--font-body);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-1px);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-primary {
+            background: var(--accent-blue);
+            border-color: transparent;
+            box-shadow: 0 4px 12px var(--accent-blue-glow);
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+            box-shadow: 0 4px 16px var(--accent-blue-glow);
+        }
+
+
+
+
+
+
+
+        /* Marker Styles */
+        .custom-marker {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+        }
+
+        .marker-inner {
+            position: relative;
+            width: 16px;
+            height: 16px;
+            background-color: var(--accent-blue);
+            border: 3px solid white;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            z-index: 10;
+            transition: background-color 0.3s;
+        }
+
+        .marker-pulse {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background-color: rgba(59, 130, 246, 0.4);
+            border-radius: 50%;
+            animation: pulse-ring 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+            z-index: 1;
+            pointer-events: none;
+            transition: background-color 0.3s;
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(0.3); opacity: 0.8; }
+            80% { transform: scale(1.2); opacity: 0; }
+            100% { transform: scale(1.2); opacity: 0; }
+        }
+
+        /* Offline Marker State */
+        .custom-marker.offline-marker .marker-inner {
+            background-color: #64748b;
+        }
+
+        .custom-marker.offline-marker .marker-pulse {
+            background-color: rgba(100, 116, 139, 0.3);
+        }
+
+        /* Empty State */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            gap: 12px;
+            padding: 20px 10px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px dashed rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+        }
+
+        .empty-state i {
+            font-size: 32px;
+            color: var(--accent-orange);
+            margin-bottom: 4px;
+        }
+
+        .empty-state p {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(8px);
+            border-radius: 10px;
+            padding: 12px 18px;
+            color: var(--text-main);
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transform: translateY(20px);
+            opacity: 0;
+            animation: slide-in-toast 0.3s forwards;
+            pointer-events: auto;
+        }
+
+        @keyframes slide-in-toast {
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        /* Adjust Leaflet zoom controls to not overlap overlay panel */
+        .leaflet-top.leaflet-left {
+            top: 20px;
+            left: auto;
+            right: 20px;
+        }
+
+        .leaflet-bar {
+            border: 1px solid var(--panel-border) !important;
+            border-radius: 8px !important;
+            overflow: hidden;
+            box-shadow: var(--card-shadow) !important;
+        }
+
+        .leaflet-bar a {
+            background-color: var(--panel-bg) !important;
+            color: var(--text-main) !important;
+            border-bottom: 1px solid var(--panel-border) !important;
+            backdrop-filter: blur(8px);
+            transition: all 0.2s;
+        }
+
+        .leaflet-bar a:hover {
+            background-color: rgba(255, 255, 255, 0.1) !important;
+        }
+
+        /* Leaflet popups customization */
+        .leaflet-popup-content-wrapper {
+            background: var(--panel-bg) !important;
+            backdrop-filter: blur(12px) !important;
+            border: 1px solid var(--panel-border) !important;
+            color: var(--text-main) !important;
+            border-radius: 12px !important;
+            box-shadow: var(--card-shadow) !important;
+        }
+
+        .leaflet-popup-tip {
+            background: var(--panel-bg) !important;
+            border: 1px solid var(--panel-border) !important;
+        }
+
+        .popup-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-family: var(--font-body);
+            font-size: 12px;
+        }
+
+        .popup-title {
+            font-family: var(--font-heading);
+            font-weight: 700;
+            font-size: 14px;
+            color: var(--accent-blue);
+            margin-bottom: 2px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 4px;
+        }
+
+        /* Mobile styling */
+        @media (max-width: 768px) {
+            .overlay-panel {
+                top: 10px;
+                left: 10px;
+                width: calc(100% - 20px);
+                max-width: 360px;
+                padding: 12px 16px;
+                gap: 12px;
+                border-radius: 12px;
+            }
+
+            .panel-toggle-btn {
+                display: flex !important;
+                align-items: center;
+                justify-content: center;
+                font-size: 14px;
+                width: 24px;
+                height: 24px;
+                border-radius: 50%;
+                background: rgba(255, 255, 255, 0.05) !important;
+                border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                color: var(--text-main) !important;
+                transition: transform 0.3s;
+            }
+
+            .overlay-panel.collapsed .panel-content {
+                max-height: 0;
+                opacity: 0;
+                overflow: hidden;
+                margin-top: 0;
+                pointer-events: none;
+            }
+
+            .overlay-panel.collapsed {
+                gap: 0;
+            }
+
+            .overlay-panel.collapsed #icon-panel-toggle {
+                transform: rotate(0deg);
+            }
+
+            .overlay-panel:not(.collapsed) #icon-panel-toggle {
+                transform: rotate(180deg);
+            }
+
+            .panel-header {
+                border-bottom: none;
+                padding-bottom: 0;
+            }
+
+            .overlay-panel:not(.collapsed) .panel-header {
+                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                padding-bottom: 12px;
+            }
+
+            .panel-content {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                max-height: 80vh;
+                opacity: 1;
+                transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease, margin-top 0.3s;
+                overflow-y: auto;
+                margin-top: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Map container -->
+    <div id="map"></div>
+
+    <!-- Floating overlay telemetry dashboard -->
+    <!-- Floating overlay telemetry dashboard -->
+    <div class="overlay-panel collapsed" id="dashboard">
+        <div class="panel-header" id="panel-header" style="cursor: pointer;">
+            <div class="logo-section">
+                <i class="fa-solid fa-location-crosshairs"></i>
+                <h1>Sherlocate</h1>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <div class="status-badge offline" id="connection-badge">
+                    <span class="pulse-dot"></span>
+                    <span id="badge-text">Desconectado</span>
+                </div>
+                <button class="panel-toggle-btn" id="btn-panel-toggle" style="background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 4px; display: none;">
+                    <i class="fa-solid fa-chevron-down" id="icon-panel-toggle"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="panel-content" id="panel-content">
+
+
+
+            <!-- Telemetry Data Container -->
+            <div id="telemetry-container">
+                <!-- Active State template (Will be updated dynamically) -->
+                <div id="telemetry-data" style="display: none; display: flex; flex-direction: column; gap: 12px;">
+                    <!-- Chart container -->
+                    <div style="background: rgba(15, 23, 42, 0.4); border: 1px solid var(--panel-border); border-radius: 12px; padding: 12px; height: 220px; position: relative; width: 100%;">
+                        <canvas id="altitude-chart"></canvas>
+                    </div>
+                    <!-- Single card for Last Report -->
+                    <div class="telemetry-card full-width" style="margin-top: 4px;">
+                        <span class="label"><i class="fa-solid fa-clock"></i> Último Reporte</span>
+                        <span class="value" id="val-timestamp" style="font-size: 13px; font-weight: 500;">--</span>
+                    </div>
+                </div>
+
+                <!-- Empty State / Setup Instruction prompt -->
+                <div class="empty-state" id="empty-state">
+                    <i class="fa-solid fa-satellite-dish"></i>
+                    <h3 style="font-family: var(--font-heading); font-size: 14px; font-weight: 600;">Esperando datos...</h3>
+                    <p>No se han recibido ubicaciones de este dispositivo. Por favor, configura tu Traccar Client en Android.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
+    <!-- Toast container for live updates notifications -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <script>
+        // --- 1. CONFIGURATION & STATE ---
+        const allowedDevices = {{ devices | tojson }} || [];
+        const defaultDevice = allowedDevices.length > 0 ? allowedDevices[0] : "123456";
+
+        // Default device ID (matches specifications, but is dynamic from URL parameter)
+        const urlParams = new URLSearchParams(window.location.search);
+        let trackingDeviceId = urlParams.get('device') || urlParams.get('id') || defaultDevice;
+        let isInitialLoad = true;
+        let lastReportedTime = null;
+        let altitudeChart = null;
+        
+        // Map elements
+        let map;
+        let deviceMarker = null;
+        let trailPolyline = null;
+        const locationHistory = []; // Tracks breadcrumbs in current session
+
+        // Map Tile Layers
+        const lightTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 20
+        });
+
+        // Setup configuration state
+        const passwordProtected = {{ password_protected | tojson }};
+
+        // --- 2. INITIALIZE MAP ---
+        function initMap() {
+            // Default view coordinates (generic center)
+            const defaultLat = 40.416775;
+            const defaultLon = -3.703790;
+            const defaultZoom = 13;
+
+            map = L.map('map', {
+                zoomControl: false,
+                layers: [lightTiles]
+            }).setView([defaultLat, defaultLon], defaultZoom);
+
+            // Create empty breadcrumbs line
+            trailPolyline = L.polyline([], {
+                color: '#3b82f6',
+                weight: 4,
+                opacity: 0.6,
+                dashArray: '5, 8'
+            }).addTo(map);
+        }
+
+        // --- 3. TOAST NOTIFICATION SERVICE ---
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast`;
+            
+            let icon = 'fa-circle-info';
+            if (type === 'success') icon = 'fa-circle-check';
+            if (type === 'warning') icon = 'fa-circle-exclamation';
+
+            toast.innerHTML = `
+                <i class="fa-solid ${icon}" style="color: ${type === 'success' ? 'var(--accent-green)' : 'var(--accent-blue)'}"></i>
+                <span>${message}</span>
+            `;
+            
+            container.appendChild(toast);
+            
+            // Auto remove toast
+            setTimeout(() => {
+                toast.style.animation = 'slide-out-toast 0.3s forwards';
+                toast.addEventListener('animationend', () => toast.remove());
+            }, 3500);
+        }
+
+        // --- 4. MAP UPDATE LOGIC ---
+        function updateMarkerAndMap(lat, lon, online, deviceId) {
+            const position = [lat, lon];
+            
+            // Dynamic custom icon based on online/offline state
+            const iconClass = online ? 'custom-marker' : 'custom-marker offline-marker';
+            
+            const customIcon = L.divIcon({
+                className: iconClass,
+                html: `
+                    <div class="marker-pulse"></div>
+                    <div class="marker-inner"></div>
+                `,
+                iconSize: [40, 40],
+                iconAnchor: [20, 20]
+            });
+
+            if (!deviceMarker) {
+                // First position received: create marker
+                deviceMarker = L.marker(position, { icon: customIcon }).addTo(map);
+                deviceMarker.bindPopup(`
+                    <div class="popup-info">
+                        <div class="popup-title">Dispositivo: ${deviceId}</div>
+                        <div>Cargando telemetría...</div>
+                    </div>
+                `);
+            } else {
+                // Update existing marker
+                deviceMarker.setLatLng(position);
+                deviceMarker.setIcon(customIcon);
+            }
+
+            // History trail is now drawn directly from the backend's persistent history list
+        }
+
+        // Haversine distance formula helper
+        function getHaversineDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Radius of Earth in km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = 
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        }
+
+        // Update or create the altitude vs distance chart
+        function updateAltitudeChart(distances, altitudes) {
+            const ctx = document.getElementById('altitude-chart').getContext('2d');
+            
+            if (altitudeChart) {
+                altitudeChart.data.labels = distances;
+                altitudeChart.data.datasets[0].data = altitudes;
+                altitudeChart.update('none'); // silent update without animation for performance
+            } else {
+                altitudeChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: distances,
+                        datasets: [{
+                            label: 'Altitud',
+                            data: altitudes,
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 1,
+                            pointHoverRadius: 5
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                callbacks: {
+                                    title: (context) => `Distancia: ${context[0].label} km`,
+                                    label: (context) => `Altitud: ${context.parsed.y} m`
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Distancia (km)',
+                                    color: '#94a3b8',
+                                    font: {
+                                        size: 10
+                                    }
+                                },
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.05)'
+                                },
+                                ticks: {
+                                    color: '#94a3b8',
+                                    font: {
+                                        size: 9
+                                    },
+                                    maxTicksLimit: 6
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Altitud (m)',
+                                    color: '#94a3b8',
+                                    font: {
+                                        size: 10
+                                    }
+                                },
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.05)'
+                                },
+                                ticks: {
+                                    color: '#94a3b8',
+                                    font: {
+                                        size: 9
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        // --- 5. TELEMETRY & VIEW UPDATES ---
+        function updateTelemetryUI(data) {
+            // Unhide telemetry details card, hide empty state instructions
+            document.getElementById('telemetry-data').style.display = 'flex';
+            document.getElementById('empty-state').style.display = 'none';
+
+            // Timestamp parsing
+            if (data.timestamp) {
+                const dateObj = new Date(data.timestamp);
+                const localTimeString = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                const localDateString = dateObj.toLocaleDateString([], { day: '2-digit', month: '2-digit' });
+                document.getElementById('val-timestamp').textContent = `${localDateString} - ${localTimeString}`;
+                
+                // Update marker popup text
+                if (deviceMarker) {
+                    const batteryText = data.battery !== null ? `Batería: ${Math.round(data.battery)}%` : 'Batería: --';
+                    const speedText = data.speed !== null ? `Velocidad: ${(data.speed * 1.852).toFixed(1)} km/h` : 'Quieto';
+                    
+                    deviceMarker.getPopup().setContent(`
+                        <div class="popup-info">
+                            <div class="popup-title">Dispositivo: ${data.id}</div>
+                            <div><strong>Reporte:</strong> ${localTimeString}</div>
+                            <div><strong>${batteryText}</strong></div>
+                            <div><strong>Detalle:</strong> ${speedText}</div>
+                        </div>
+                    `);
+                }
+            }
+        }
+
+        // --- 6. API COMMUNICATIONS ---
+        
+        // Fetch location of selected device
+        async function fetchLocation() {
+            try {
+                const response = await fetch(`/api/location/${trackingDeviceId}`);
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                if (data === null) {
+                    // Handle no data reported yet
+                    document.getElementById('telemetry-data').style.display = 'none';
+                    document.getElementById('empty-state').style.display = 'flex';
+                    
+                    const badge = document.getElementById('connection-badge');
+                    badge.className = 'status-badge offline';
+                    document.getElementById('badge-text').textContent = 'Inactivo';
+                    
+                    if (deviceMarker) {
+                        map.removeLayer(deviceMarker);
+                        deviceMarker = null;
+                    }
+                    if (trailPolyline) {
+                        trailPolyline.setLatLngs([]);
+                    }
+                    return;
+                }
+                
+                const latest = data.latest;
+                const history = data.history;
+                
+                // Track online state based on whether location was updated in the last 40 seconds
+                let lastSeenStr = latest.last_seen;
+                if (lastSeenStr && !lastSeenStr.endsWith('Z') && !lastSeenStr.includes('+')) {
+                    lastSeenStr += 'Z';
+                }
+                const lastSeenTime = new Date(lastSeenStr);
+                const timeDiffSeconds = (new Date() - lastSeenTime) / 1000;
+                const isOnline = timeDiffSeconds < 600; // online if updated recently (10 minutes)
+
+                // Update UI badge
+                const badge = document.getElementById('connection-badge');
+                if (isOnline) {
+                    badge.className = 'status-badge online';
+                    let batteryText = '';
+                    if (latest.battery !== null && latest.battery !== undefined) {
+                        batteryText = ' | ' + Math.round(latest.battery) + '%';
+                    }
+                    document.getElementById('badge-text').textContent = batteryText;
+                } else {
+                    badge.className = 'status-badge offline';
+                    document.getElementById('badge-text').textContent = 'Inactivo';
+                }
+
+                // If this is a new update, update lastReportedTime
+                if (latest.timestamp !== lastReportedTime) {
+                    lastReportedTime = latest.timestamp;
+                }
+
+                updateMarkerAndMap(latest.lat, latest.lon, isOnline, latest.id);
+                updateTelemetryUI(latest);
+                
+                // Draw historical route line directly from backend data
+                if (history && Array.isArray(history)) {
+                    trailPolyline.setLatLngs(history);
+                    
+                    // Compute distance & altitude datasets
+                    const distances = [];
+                    const altitudes = [];
+                    let cumulativeDistance = 0;
+                    
+                    if (history.length > 0) {
+                        distances.push(0);
+                        // history points are [lat, lon, altitude]
+                        altitudes.push(history[0][2] || 0);
+                        
+                        for (let i = 1; i < history.length; i++) {
+                            const prev = history[i - 1];
+                            const curr = history[i];
+                            const d = getHaversineDistance(prev[0], prev[1], curr[0], curr[1]);
+                            cumulativeDistance += d;
+                            distances.push(Number(cumulativeDistance.toFixed(2)));
+                            altitudes.push(curr[2] || 0);
+                        }
+                    }
+                    
+                    updateAltitudeChart(distances, altitudes);
+                }
+
+                // Initial view adjustment
+                if (isInitialLoad) {
+                    if (history && Array.isArray(history) && history.length > 0) {
+                        map.fitBounds(trailPolyline.getBounds(), { padding: [50, 50] });
+                    } else if (latest) {
+                        map.setView([latest.lat, latest.lon], 16);
+                    }
+                    isInitialLoad = false;
+                }
+
+            } catch (err) {
+                console.error("Error fetching location data:", err);
+            }
+        }
+
+        // Poll API to auto-discover active tracking devices
+        async function fetchDevicesList() {
+            try {
+                const response = await fetch('/api/devices');
+                if (!response.ok) return;
+
+                const devices = await response.json();
+            } catch (err) {
+                console.error("Error discovering devices:", err);
+            }
+        }
+
+        // --- 7. EVENT LISTENERS & INTERACTIONS ---
+        
+
+
+
+        // Toggle mobile panel collapse/expand
+        document.getElementById('panel-header').addEventListener('click', (e) => {
+            const toggleBtn = document.getElementById('btn-panel-toggle');
+            if (window.getComputedStyle(toggleBtn).display !== 'none') {
+                const panel = document.getElementById('dashboard');
+                panel.classList.toggle('collapsed');
+            }
+        });
+
+
+
+        // --- 8. RUN INITIALIZATION ---
+        window.addEventListener('DOMContentLoaded', () => {
+            initMap();
+            
+            // Perform initial queries
+            fetchDevicesList();
+            fetchLocation();
+
+            // Short polling (5 seconds as per spec)
+            setInterval(fetchLocation, 5000);
+
+            // Devices list polling (10 seconds)
+            setInterval(fetchDevicesList, 10000);
+        });
+    </script>
+</body>
+</html>

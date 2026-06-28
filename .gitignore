@@ -1,0 +1,17 @@
+# Environment configuration (contains credentials)
+.env
+
+# Persistent data directory
+data/
+
+# Python bytecode and caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# OS specific files
+.DS_Store
+Thumbs.db
